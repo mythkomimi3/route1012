@@ -395,6 +395,107 @@ function manN() {
   });
 }
 
+// ============================================================
+// Step 3: Google Sheets API ヘルパー関数
+// ============================================================
+
+// --- シートID取得 ---
+async function sheetsGetSheetList() {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}?key=${gsKey}`
+  );
+  if (!res.ok) throw new Error(`シート一覧取得失敗: ${res.status}`);
+  const data = await res.json();
+  return data.sheets.map(s => ({
+    title: s.properties.title,
+    sheetId: s.properties.sheetId
+  }));
+}
+
+// --- 値取得 ---
+async function sheetsGet(range) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE&key=${gsKey}`
+  );
+  if (!res.ok) throw new Error(`データ取得失敗 [${range}]: ${res.status}`);
+  const data = await res.json();
+  return data.values || [];
+}
+
+// --- 値更新 ---
+async function sheetsUpdate(range, values) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}/values/${encodeURIComponent(range)}?valueInputOption=RAW&key=${gsKey}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values })
+    }
+  );
+  if (!res.ok) throw new Error(`データ更新失敗 [${range}]: ${res.status}`);
+  return await res.json();
+}
+
+// --- セルクリア ---
+async function sheetsClear(range) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}/values/${encodeURIComponent(range)}:clear?key=${gsKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+  );
+  if (!res.ok) throw new Error(`クリア失敗 [${range}]: ${res.status}`);
+  return await res.json();
+}
+
+// --- シートコピー ---
+async function sheetsCopySheet(sourceSheetId, newTitle) {
+  const copyRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}/sheets/${sourceSheetId}:copyTo?key=${gsKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destinationSpreadsheetId: SHEETID })
+    }
+  );
+  if (!copyRes.ok) throw new Error(`シートコピー失敗: ${copyRes.status}`);
+  const copyData = await copyRes.json();
+  const newSheetId = copyData.sheetId;
+
+  const renameRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}:batchUpdate?key=${gsKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          updateSheetProperties: {
+            properties: { sheetId: newSheetId, title: newTitle },
+            fields: 'title'
+          }
+        }]
+      })
+    }
+  );
+  if (!renameRes.ok) throw new Error(`リネーム失敗: ${renameRes.status}`);
+  return newSheetId;
+}
+
+// --- batchUpdate汎用 ---
+async function sheetsBatchUpdate(requests) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETID}:batchUpdate?key=${gsKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests })
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(`batchUpdate失敗: ${JSON.stringify(err.error?.message)}`);
+  }
+  return await res.json();
+}
+
 function drawNH() {
   var tb = document.getElementById('nhst');
   if (!nHist.length) {
